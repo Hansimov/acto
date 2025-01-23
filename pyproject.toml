@@ -1,10 +1,10 @@
 [project]
-name = "pypitemp"
-version = "0.1"
+name = "acto"
+version = "0.1.1"
 authors = [
     { name="Hansimov" },
 ]
-description = "A template of pypi library"
+description = "Automate Common Tasks On-demand"
 readme = "README.md"
 requires-python = ">=3.6"
 classifiers = [
@@ -15,5 +15,5 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/Hansimov/pypitemp"
-Issues = "https://github.com/Hansimov/pypitemp/issues"
+Homepage = "https://github.com/Hansimov/acto"
+Issues = "https://github.com/Hansimov/acto/issues"

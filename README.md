@@ -1,12 +1,12 @@
-# pypitemp
-A template of pypi library
+# acto
+Automate Common Tasks On-demand.
 
-![](https://img.shields.io/pypi/v/pypitemp?label=pypitemp&color=blue&cacheSeconds=60)
+![](https://img.shields.io/pypi/v/acto?label=acto&color=blue&cacheSeconds=60)
 
 ## Install
 
 ```sh
-pip install pypitemp --upgrade
+pip install acto --upgrade
 ```
 
 ## Usage
@@ -17,7 +17,7 @@ Run example:
 python example.py
 ```
 
-See: [example.py](https://github.com/Hansimov/pypitemp/blob/main/example.py)
+See: [example.py](https://github.com/Hansimov/acto/blob/main/example.py)
 
 ```python
 ```
