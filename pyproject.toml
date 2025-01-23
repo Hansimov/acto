@@ -1,0 +1,19 @@
+[project]
+name = "pypitemp"
+version = "0.1"
+authors = [
+    { name="Hansimov" },
+]
+description = "A template of pypi library"
+readme = "README.md"
+requires-python = ">=3.6"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Hansimov/pypitemp"
+Issues = "https://github.com/Hansimov/pypitemp/issues"
