@@ -2,7 +2,8 @@ import re
 
 from collections.abc import Generator
 from datetime import datetime
-from tclogger import logger, logstr
+from itertools import product
+from tclogger import logger, logstr, Runtimer
 from tclogger import get_now, get_now_str, str_to_ts, t_to_str, str_to_ts, str_to_t
 from typing import Union, Literal
 
@@ -126,6 +127,7 @@ class PatternedDatetimeSeeker:
         "second_r": range(59, -1, -1),
     }
     DD_ATTRS = {
+        "year": "yyyy",
         "month": "mm",
         "day": "dd",
         "hour": "hh",
@@ -146,6 +148,7 @@ class PatternedDatetimeSeeker:
 
     def update_dt_beg_end(self) -> tuple[str, str]:
         self.dt_beg, self.t_beg = unify_dt_beg_end(self.dt_beg, "beg")
+        self.DD_RANGES["year"] = range(self.t_beg.year, 9999)
 
     def update_ymdhms_pattern(self, pattern: str = None) -> str:
         if not pattern:
@@ -161,53 +164,52 @@ class PatternedDatetimeSeeker:
             if re_match_nn(pattern, dd):
                 yield dd
 
-    def calc_min_matched_year(self) -> str:
-        for year in range(self.t_beg.year, 9999):
-            for month in self.iter_dd("month_r"):
-                for day in self.iter_dd("day_r"):
-                    temp_dt_str = f"{year:04d}-{month:02d}-{day:02d} 23:59:59"
-                    if not is_dt_str_valid_and_later(temp_dt_str, self.dt_beg):
-                        continue
-                    for hour in self.iter_dd("hour_r"):
-                        for minute in self.iter_dd("minute_r"):
-                            for second in self.iter_dd("second_r"):
-                                temp_dt_str = f"{year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
-                                if not is_dt_str_valid_and_later(
-                                    temp_dt_str, self.dt_beg
-                                ):
-                                    continue
-                                min_year = f"{year:04d}"
-                                self.min_year = min_year
-                                return min_year
+    def iter_dds_product(self, levels: list[str]) -> Generator[tuple[str], None, None]:
+        for dd in product(*[self.iter_dd(level) for level in levels]):
+            yield dd
 
-    def calc_min_matched_month(self) -> str:
-        for month in self.iter_dd("month"):
-            for day in self.iter_dd("day_r"):
-                temp_dt_str = f"{self.min_year}-{month:02d}-{day:02d} 23:59:59"
+    def calc_min_matched_year(self) -> str:
+        for year, month, day in self.iter_dds_product(["year", "month_r", "day_r"]):
+            temp_dt_str = f"{year:04d}-{month:02d}-{day:02d} 23:59:59"
+            if not is_dt_str_valid_and_later(temp_dt_str, self.dt_beg):
+                continue
+            for hour, minute, second in self.iter_dds_product(
+                ["hour_r", "minute_r", "second_r"]
+            ):
+                temp_dt_str = f"{year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
                 if not is_dt_str_valid_and_later(temp_dt_str, self.dt_beg):
                     continue
-                for hour in self.iter_dd("hour_r"):
-                    for minute in self.iter_dd("minute_r"):
-                        for second in self.iter_dd("second_r"):
-                            temp_dt_str = f"{self.min_year}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
-                            if not is_dt_str_valid_and_later(temp_dt_str, self.dt_beg):
-                                continue
-                            self.min_month = f"{month:02d}"
-                            return self.min_month
+                min_year = f"{year:04d}"
+                self.min_year = min_year
+                return min_year
+
+    def calc_min_matched_month(self) -> str:
+        for month, day in self.iter_dds_product(["month", "day"]):
+            temp_dt_str = f"{self.min_year}-{month:02d}-{day:02d} 23:59:59"
+            if not is_dt_str_valid_and_later(temp_dt_str, self.dt_beg):
+                continue
+            for hour, minute, second in self.iter_dds_product(
+                ["hour_r", "minute_r", "second_r"]
+            ):
+                temp_dt_str = f"{self.min_year}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
+                if not is_dt_str_valid_and_later(temp_dt_str, self.dt_beg):
+                    continue
+                self.min_month = f"{month:02d}"
+                return self.min_month
 
     def calc_min_matched_day(self) -> str:
         for day in self.iter_dd("day"):
             temp_dt_str = f"{self.min_year}-{self.min_month}-{day:02d} 23:59:59"
             if not is_dt_str_valid_and_later(temp_dt_str, self.dt_beg):
                 continue
-            for hour in self.iter_dd("hour_r"):
-                for minute in self.iter_dd("minute_r"):
-                    for second in self.iter_dd("second_r"):
-                        temp_dt_str = f"{self.min_year}-{self.min_month}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
-                        if not is_dt_str_valid_and_later(temp_dt_str, self.dt_beg):
-                            continue
-                        self.min_day = f"{day:02d}"
-                        return self.min_day
+            for hour, minute, second in self.iter_dds_product(
+                ["hour_r", "minute_r", "second_r"]
+            ):
+                temp_dt_str = f"{self.min_year}-{self.min_month}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
+                if not is_dt_str_valid_and_later(temp_dt_str, self.dt_beg):
+                    continue
+                self.min_day = f"{day:02d}"
+                return self.min_day
 
     def calc_min_matched_hour(self) -> str:
         for hour in self.iter_dd("hour"):
@@ -216,13 +218,12 @@ class PatternedDatetimeSeeker:
             )
             if not is_dt_str_valid_and_later(temp_dt_str, self.dt_beg):
                 continue
-            for minute in self.iter_dd("minute_r"):
-                for second in self.iter_dd("second_r"):
-                    temp_dt_str = f"{self.min_year}-{self.min_month}-{self.min_day} {hour:02d}:{minute:02d}:{second:02d}"
-                    if not is_dt_str_valid_and_later(temp_dt_str, self.dt_beg):
-                        continue
-                    self.min_hour = f"{hour:02d}"
-                    return self.min_hour
+            for minute, second in self.iter_dds_product(["minute_r", "second_r"]):
+                temp_dt_str = f"{self.min_year}-{self.min_month}-{self.min_day} {hour:02d}:{minute:02d}:{second:02d}"
+                if not is_dt_str_valid_and_later(temp_dt_str, self.dt_beg):
+                    continue
+                self.min_hour = f"{hour:02d}"
+                return self.min_hour
 
     def calc_min_matched_minute(self) -> str:
         for minute in self.iter_dd("minute"):
@@ -315,7 +316,8 @@ def test_get_min_matched_dt_str():
 
 
 if __name__ == "__main__":
-    # test_fill_iso()
-    test_get_min_matched_dt_str()
+    with Runtimer():
+        # test_fill_iso()
+        test_get_min_matched_dt_str()
 
     # python -m acto.periods
