@@ -113,6 +113,22 @@ def unify_dt_beg_end(
     return dt_be, t_be
 
 
+def zip_kvs(keys: Union[list[str], str], vals: Union[list[str], str]) -> dict:
+    if isinstance(keys, (list, tuple)) and isinstance(vals, (list, tuple)):
+        return dict(zip(keys, vals))
+    key = keys[0] if isinstance(keys, (list, tuple)) else keys
+    val = vals[0] if isinstance(vals, (list, tuple)) else vals
+    return {key: val}
+
+
+def tuplize_vars(v1: Union[tuple, str, int], v2: Union[tuple, str, int]) -> tuple:
+    if isinstance(v1, (str, int)):
+        v1 = (v1,)
+    if isinstance(v2, (str, int)):
+        v2 = (v2,)
+    return v1 + v2
+
+
 class PatternedDatetimeSeeker:
     DD_RANGES = {
         "month": range(1, 13),
@@ -165,8 +181,8 @@ class PatternedDatetimeSeeker:
                 yield dd
 
     def iter_dds_product(self, levels: list[str]) -> Generator[tuple[str], None, None]:
-        for dd in product(*[self.iter_dd(level) for level in levels]):
-            yield dd
+        for dds in product(*[self.iter_dd(level) for level in levels]):
+            yield dds
 
     def is_ymdhms_valid_and_later(
         self,
@@ -195,75 +211,71 @@ class PatternedDatetimeSeeker:
         dt_str = f"{yy}-{mm}-{dd} {hh}:{mi}:{ss}"
         return is_dt_str_valid_and_later(dt_str, self.dt_beg)
 
-    def calc_min_matched_year(self) -> str:
-        for year, month, day in self.iter_dds_product(["year", "month_r", "day_r"]):
-            if not self.is_ymdhms_valid_and_later(year, month, day, day_end=True):
-                continue
-            for hour, minute, second in self.iter_dds_product(
-                ["hour_r", "minute_r", "second_r"]
+    def iter_dds_product_and_check(
+        self,
+        levels: list[str],
+        dd_type: Literal["ymd", "hms"] = "ymd",
+        extra_level_kvs: dict = {},
+    ) -> Generator[tuple[str], None, None]:
+        level_keys = [level.split("_")[0] for level in levels]
+        if len(levels) == 1:
+            product_iter = self.iter_dd(levels[0])
+        else:
+            product_iter = self.iter_dds_product(levels)
+        for dd in product_iter:
+            if self.is_ymdhms_valid_and_later(
+                **zip_kvs(level_keys, dd), **extra_level_kvs, day_end=(dd_type == "ymd")
             ):
-                if not self.is_ymdhms_valid_and_later(
-                    year, month, day, hour, minute, second
-                ):
-                    continue
-                min_year = f"{year:04d}"
-                self.min_year = min_year
-                return min_year
+                yield dd
+
+    def double_iter_dds_product_and_check(
+        self, ymd_levels: list[str], hms_levels: list[str]
+    ) -> Generator[tuple[str], None, None]:
+        ymd_level_keys = [level.split("_")[0] for level in ymd_levels]
+        for ymd in self.iter_dds_product_and_check(ymd_levels, "ymd"):
+            for hms in self.iter_dds_product_and_check(
+                hms_levels, "hms", extra_level_kvs=zip_kvs(ymd_level_keys, ymd)
+            ):
+                yield tuplize_vars(ymd, hms)
+
+    def calc_min_matched_year(self) -> str:
+        for year, *_ in self.double_iter_dds_product_and_check(
+            ["year", "month_r", "day_r"], ["hour_r", "minute_r", "second_r"]
+        ):
+            min_year = f"{year:04d}"
+            self.min_year = min_year
+            return min_year
 
     def calc_min_matched_month(self) -> str:
-        for month, day in self.iter_dds_product(["month", "day"]):
-            if not self.is_ymdhms_valid_and_later(month=month, day=day, day_end=True):
-                continue
-            for hour, minute, second in self.iter_dds_product(
-                ["hour_r", "minute_r", "second_r"]
-            ):
-                if not self.is_ymdhms_valid_and_later(
-                    month=month, day=day, hour=hour, minute=minute, second=second
-                ):
-                    continue
-                self.min_month = f"{month:02d}"
-                return self.min_month
+        for month, *_ in self.double_iter_dds_product_and_check(
+            ["month", "day_r"], ["hour_r", "minute_r", "second_r"]
+        ):
+            self.min_month = f"{month:02d}"
+            return self.min_month
 
     def calc_min_matched_day(self) -> str:
-        for day in self.iter_dd("day"):
-            if not self.is_ymdhms_valid_and_later(day=day, day_end=True):
-                continue
-            for hour, minute, second in self.iter_dds_product(
-                ["hour_r", "minute_r", "second_r"]
-            ):
-                if not self.is_ymdhms_valid_and_later(
-                    day=day, hour=hour, minute=minute, second=second
-                ):
-                    continue
-                self.min_day = f"{day:02d}"
-                return self.min_day
+        for day, *_ in self.double_iter_dds_product_and_check(
+            ["day"], ["hour_r", "minute_r", "second_r"]
+        ):
+            self.min_day = f"{day:02d}"
+            return self.min_day
 
     def calc_min_matched_hour(self) -> str:
-        for hour in self.iter_dd("hour"):
-            if not self.is_ymdhms_valid_and_later(hour=hour, day_end=True):
-                continue
-            for minute, second in self.iter_dds_product(["minute_r", "second_r"]):
-                if not self.is_ymdhms_valid_and_later(
-                    hour=hour, minute=minute, second=second
-                ):
-                    continue
-                self.min_hour = f"{hour:02d}"
-                return self.min_hour
+        for hour, *_ in self.double_iter_dds_product_and_check(
+            ["hour"], ["minute_r", "second_r"]
+        ):
+            self.min_hour = f"{hour:02d}"
+            return self.min_hour
 
     def calc_min_matched_minute(self) -> str:
-        for minute in self.iter_dd("minute"):
-            if not self.is_ymdhms_valid_and_later(minute=minute, day_end=True):
-                continue
-            for second in self.iter_dd("second_r"):
-                if not self.is_ymdhms_valid_and_later(minute=minute, second=second):
-                    continue
-                self.min_minute = f"{minute:02d}"
-                return self.min_minute
+        for minute, *_ in self.double_iter_dds_product_and_check(
+            ["minute"], ["second_r"]
+        ):
+            self.min_minute = f"{minute:02d}"
+            return self.min_minute
 
     def calc_min_matched_second(self) -> str:
-        for second in self.iter_dd("second"):
-            if not self.is_ymdhms_valid_and_later(second=second):
-                continue
+        for second in self.iter_dds_product_and_check(["second"], "hms"):
             self.min_second = f"{second:02d}"
             return self.min_second
 
