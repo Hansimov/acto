@@ -78,16 +78,6 @@ def is_dt_str_valid_and_later(dt_str: str, dt_beg: str) -> bool:
     return is_dt_str_valid(dt_str) and is_dt_str_later(dt_str, dt_beg)
 
 
-def dt_pattern_to_regex(pattern: str) -> tuple:
-    ymdh_list = re.findall(r"[\d\*]+", pattern)
-    yyyy, mm, dd, hh, mi, ss = list(map(lambda x: x.replace("*", "\d"), ymdh_list))
-    return yyyy, mm, dd, hh, mi, ss
-
-
-def re_match_nn(re_pattern: str, num: Union[int, str], digits: int = 2) -> bool:
-    return re.match(re_pattern, f"{num:0{digits}d}")
-
-
 def unify_dt_beg_end(
     dt_be: str = None, pos: Literal["beg", "end"] = "beg"
 ) -> tuple[str, datetime]:
@@ -118,6 +108,42 @@ def tuplize_vars(v1: Union[tuple, str, int], v2: Union[tuple, str, int]) -> tupl
         v2 = (v2,)
     return v1 + v2
 
+def re_match_nn(pattern: str, num: Union[int, str], digits: int = 2) -> bool:
+    return re.match(pattern, f"{num:0{digits}d}")
+
+
+class PatternConverter:
+    LEVELS = ["year", "month", "day", "hour", "minute", "second"]
+
+    def __init__(self) -> None:
+        pass
+
+    def ymdhms_pattern_to_re_dict(self, pattern: str) -> dict:
+        ymdh_list = re.findall(r"[\d\*]+", pattern)
+        yyyy, mm, dd, hh, mi, ss = list(map(lambda x: x.replace("*", "\d"), ymdh_list))
+        return {
+            "year": yyyy,
+            "month": mm,
+            "day": dd,
+            "hour": hh,
+            "minute": mi,
+            "second": ss,
+        }
+
+    def fill_low_level_as_zero(self, pattern: dict) -> dict:
+        for level in reversed(self.LEVELS):
+            if pattern.get(level) is None:
+                pattern[level] = "00"
+            else:
+                break
+        return pattern
+
+    def convert(self, pattern: Union[str, dict, list]) -> dict:
+        if isinstance(pattern, str):
+            return self.ymdhms_pattern_to_re_dict(pattern)
+        if isinstance(pattern, dict):
+            return self.fill_low_level_as_zero(pattern)
+
 
 class PatternedDatetimeSeeker:
     DD_RANGES = {
@@ -141,7 +167,12 @@ class PatternedDatetimeSeeker:
         "second": "ss",
     }
 
-    def __init__(self, pattern: str, dt_beg: str = None, dt_end: str = None) -> None:
+    def __init__(
+        self,
+        patterns: Union[str, dict, list[str], list[dict]],
+        dt_beg: str = None,
+        dt_end: str = None,
+    ) -> None:
         self.min_year = None
         self.min_month = None
         self.min_day = None
@@ -150,24 +181,25 @@ class PatternedDatetimeSeeker:
         self.min_second = None
         self.dt_beg = dt_beg
         self.dt_end = dt_end
-        self.pattern = pattern
+        self.patterns = patterns
+        self.init_dt_beg_end()
+        self.init_patterns()
 
-    def update_dt_beg_end(self) -> tuple[str, str]:
+    def init_dt_beg_end(self) -> tuple[str, str]:
         self.dt_beg, self.t_beg = unify_dt_beg_end(self.dt_beg, "beg")
+        self.dt_end, self.t_end = unify_dt_beg_end(self.dt_end, "end")
         self.DD_RANGES["year"] = range(self.t_beg.year, 9999)
 
-    def update_ymdhms_pattern(self, pattern: str = None) -> str:
-        if not pattern:
-            pattern = self.pattern
-        regex_res = dt_pattern_to_regex(pattern)
-        self.yyyy, self.mm, self.dd, self.hh, self.mi, self.ss = regex_res
+    def init_patterns(self) -> str:
+        converter = PatternConverter()
+        self.pattern_dict = converter.convert(self.patterns)
 
     def iter_dd(self, level: str) -> Generator[str, None, None]:
-        attr = self.DD_ATTRS[level.split("_")[0]]
+        level_prefix = level.split("_")[0]
         dd_range = self.DD_RANGES[level]
-        pattern = getattr(self, attr)
+        pattern = self.pattern_dict.get(level_prefix, None)
         for dd in dd_range:
-            if re_match_nn(pattern, dd):
+            if pattern is None or re_match_nn(pattern, dd):
                 yield dd
 
     def iter_dds_product(self, levels: list[str]) -> Generator[tuple[str], None, None]:
@@ -270,8 +302,6 @@ class PatternedDatetimeSeeker:
             return self.min_second
 
     def get_min_matched_dt_str(self) -> str:
-        self.update_dt_beg_end()
-        self.update_ymdhms_pattern()
         self.calc_min_matched_year()
         self.calc_min_matched_month()
         self.calc_min_matched_day()
@@ -305,6 +335,8 @@ def test_get_min_matched_dt_str():
         ("****-*2-** 00:00:00", "2025-02-28 00:00:00", "2025-12-01 00:00:00"),
         ("****-02-** 00:00:00", "2025-02-28 00:00:00", "2026-02-01 00:00:00"),
         ("****-**-*1 00:00:00", "2025-02-28 00:00:00", "2025-03-01 00:00:00"),
+        ({"day": "03"}, "2025-02-28 00:00:00", "2025-03-03 00:00:00"),
+        ({"hour": "0[34]"}, "2025-02-28 00:00:00", "2025-02-28 03:00:00"),
     ]
     with logger.temp_indent(2):
         for pattern, dt_beg, answer in pattern_answers:
@@ -327,4 +359,4 @@ if __name__ == "__main__":
         # test_fill_iso()
         test_get_min_matched_dt_str()
 
-    # python -m acto.periods
+    # python -m acto.times
