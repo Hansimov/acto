@@ -1,9 +1,10 @@
 import re
 
 from collections.abc import Generator
-from datetime import datetime
+from datetime import datetime, timedelta
+from operator import add, sub
 from itertools import product
-from tclogger import logger, logstr, Runtimer
+from tclogger import logger, logstr, Runtimer, dict_to_str
 from tclogger import get_now, get_now_str, str_to_ts, t_to_str, str_to_ts, str_to_t
 from typing import Union, Literal
 
@@ -120,7 +121,83 @@ def re_match_nn(pattern: str, num: Union[int, str], digits: int = 2) -> bool:
     return re.match(pattern, f"{num:0{digits}d}")
 
 
-class PatternConverter:
+class UnitTimeDistConverter:
+    UNIT_SECONDS = {
+        "year": {
+            "units": ["y", "yr", "year", "years"],
+            "seconds": 365 * 24 * 60 * 60,
+        },
+        "month": {
+            "units": ["m", "mon", "month", "months"],
+            "seconds": 30 * 24 * 60 * 60,
+        },
+        "week": {
+            "units": ["w", "wk", "week", "weeks"],
+            "seconds": 7 * 24 * 60 * 60,
+        },
+        "day": {
+            "units": ["d", "day", "days"],
+            "seconds": 24 * 60 * 60,
+        },
+        "hour": {
+            "units": ["h", "hr", "hour", "hours"],
+            "seconds": 60 * 60,
+        },
+        "minute": {
+            "units": ["n", "min", "minute", "minutes"],
+            "seconds": 60,
+        },
+        "second": {
+            "units": ["s", "sec", "second", "seconds"],
+            "seconds": 1,
+        },
+    }
+
+    def __init__(self, direction: Literal["before", "after"] = "before") -> None:
+        self.direction = direction
+        self.init_op()
+
+    def init_op(self):
+        if self.direction == "before":
+            self.op = sub
+        else:
+            self.op = add
+
+    def to_seconds(self, ut_str: str) -> int:
+        pattern = "(\d+)\s*(\S+)"
+        match_res = re.match(pattern, ut_str.strip())
+        if match_res:
+            num = int(match_res.group(1))
+            unit = match_res.group(2).lower()
+        else:
+            return None
+
+        for unit_name, unit_dict in self.UNIT_SECONDS.items():
+            if unit in unit_dict["units"]:
+                return num * unit_dict["seconds"]
+
+        return None
+
+    def to_timestamp(self, ut_str: str) -> int:
+        seconds = self.to_seconds(ut_str)
+        if seconds:
+            return int(self.op(datetime.now().timestamp(), seconds))
+        return None
+
+    def to_datetime(self, ut_str: str) -> datetime:
+        seconds = self.to_seconds(ut_str)
+        if seconds:
+            return self.op(datetime.now(), timedelta(seconds=seconds))
+        return None
+
+    def to_dt_str(self, ut_str: str) -> str:
+        dt = self.to_datetime(ut_str)
+        if dt:
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+        return None
+
+
+class YmdhmsPatternConverter:
     LEVELS = ["year", "month", "day", "hour", "minute", "second"]
 
     def __init__(self) -> None:
@@ -200,7 +277,7 @@ class PatternedDatetimeSeeker:
         self.DD_RANGES["year"] = range(self.t_beg.year, 9999)
 
     def init_patterns(self) -> str:
-        converter = PatternConverter()
+        converter = YmdhmsPatternConverter()
         self.pattern_dict = converter.convert(self.patterns)
 
     def iter_dd(self, level: str) -> Generator[str, None, None]:
@@ -338,6 +415,21 @@ def test_fill_iso():
             logger.file(fill_iso(dt_str, lmask=now_str))
 
 
+def test_unit_time_disk_converter():
+    ut_strs = ["1 year", "1 month", "1 week", "1 day", "1 hour", "15 minute"]
+    b_converter = UnitTimeDistConverter("before")
+    a_converter = UnitTimeDistConverter("after")
+    logger.note("> test_unit_time_disk_converter")
+    logger.mesg(f"* now: {get_now_str()}")
+    res_dict = {}
+    for ut_str in ut_strs:
+        b_dt_str = b_converter.to_dt_str(ut_str)
+        a_dt_str = a_converter.to_dt_str(ut_str)
+        res_dict[f"{ut_str} before"] = b_dt_str
+        res_dict[f"{ut_str} after"] = a_dt_str
+    logger.mesg(dict_to_str(res_dict), indent=2)
+
+
 def test_get_min_matched_dt_str():
     logger.note("> test_get_min_matched_dt_str")
     pattern_answers = [
@@ -373,6 +465,7 @@ def test_get_min_matched_dt_str():
 if __name__ == "__main__":
     with Runtimer():
         # test_fill_iso()
-        test_get_min_matched_dt_str()
+        # test_get_min_matched_dt_str()
+        test_unit_time_disk_converter()
 
     # python -m acto.times
