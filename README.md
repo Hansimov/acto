@@ -14,10 +14,6 @@ pip install acto --upgrade
 Run example:
 
 ```sh
-python example.py
-```
-
-See: [example.py](https://github.com/Hansimov/acto/blob/main/example.py)
-
-```python
+python -m acto.times
+python -m acto.periods
 ```
