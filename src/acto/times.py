@@ -108,6 +108,14 @@ def tuplize_vars(v1: Union[tuple, str, int], v2: Union[tuple, str, int]) -> tupl
         v2 = (v2,)
     return v1 + v2
 
+
+def delta_seconds(dt_str1: str, dt_str2: str) -> float:
+    return (
+        datetime.fromisoformat(dt_str2).timestamp()
+        - datetime.fromisoformat(dt_str1).timestamp()
+    )
+
+
 def re_match_nn(pattern: str, num: Union[int, str], digits: int = 2) -> bool:
     return re.match(pattern, f"{num:0{digits}d}")
 
@@ -131,6 +139,7 @@ class PatternConverter:
         }
 
     def fill_low_level_as_zero(self, pattern: dict) -> dict:
+        pattern = {k: v.replace("*", "\d") for k, v in pattern.items()}
         for level in reversed(self.LEVELS):
             if pattern.get(level) is None:
                 pattern[level] = "00"
@@ -309,6 +318,13 @@ class PatternedDatetimeSeeker:
         self.calc_min_matched_minute()
         self.calc_min_matched_second()
         return f"{self.min_year}-{self.min_month}-{self.min_day} {self.min_hour}:{self.min_minute}:{self.min_second}"
+
+    def __iter__(self) -> Generator[tuple[str, float], None, None]:
+        while self.dt_beg <= self.dt_end:
+            next_dt_str = self.get_min_matched_dt_str()
+            remain_seconds = delta_seconds(self.dt_beg, next_dt_str)
+            self.dt_beg = next_dt_str
+            yield next_dt_str, remain_seconds
 
 
 def test_fill_iso():
