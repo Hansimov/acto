@@ -152,6 +152,7 @@ class UnitTimeDistConverter:
             "seconds": 1,
         },
     }
+    RE_NUM_UNIT = r"(\d+)\s*(\S+)"
 
     def __init__(self, direction: Literal["before", "after"] = "before") -> None:
         self.direction = direction
@@ -163,38 +164,64 @@ class UnitTimeDistConverter:
         else:
             self.op = add
 
-    def to_seconds(self, ut_str: str) -> int:
-        pattern = "(\d+)\s*(\S+)"
-        match_res = re.match(pattern, ut_str.strip())
+    def get_dt(self, dt_str: str = None) -> datetime:
+        if dt_str:
+            return datetime.fromisoformat(dt_str)
+        else:
+            return datetime.now()
+
+    def match_unit_num(self, ut_str: str) -> tuple[str, int, int]:
+        match_res = re.match(self.RE_NUM_UNIT, ut_str.strip())
         if match_res:
             num = int(match_res.group(1))
             unit = match_res.group(2).lower()
         else:
-            return None
+            return None, None, None
 
+        matched_unit_name = None
         for unit_name, unit_dict in self.UNIT_SECONDS.items():
             if unit in unit_dict["units"]:
-                return num * unit_dict["seconds"]
+                delta_seconds = num * unit_dict["seconds"]
+                matched_unit_name = unit_name
 
-        return None
+        return matched_unit_name, num, delta_seconds
 
-    def to_timestamp(self, ut_str: str) -> int:
-        seconds = self.to_seconds(ut_str)
-        if seconds:
-            return int(self.op(datetime.now().timestamp(), seconds))
-        return None
+    def to_datetime(self, ut_str: str, dt_str: str = None) -> datetime:
+        dt = self.get_dt(dt_str)
+        matched_unit_name, num, delta_seconds = self.match_unit_num(ut_str)
+        if matched_unit_name is None:
+            return None
+        elif matched_unit_name == "year":
+            res_dt = datetime(
+                self.op(dt.year, num), dt.month, dt.day, dt.hour, dt.minute, dt.second
+            )
+        elif matched_unit_name == "month":
+            res_dt = datetime(
+                self.op(dt.year, num // 12),
+                (self.op(dt.month, num) - 1) % 12 + 1,
+                dt.day,
+                dt.hour,
+                dt.minute,
+                dt.second,
+            )
+        else:
+            res_dt = self.op(dt, timedelta(seconds=delta_seconds))
 
-    def to_datetime(self, ut_str: str) -> datetime:
-        seconds = self.to_seconds(ut_str)
-        if seconds:
-            return self.op(datetime.now(), timedelta(seconds=seconds))
-        return None
+        return res_dt
 
-    def to_dt_str(self, ut_str: str) -> str:
-        dt = self.to_datetime(ut_str)
-        if dt:
-            return dt.strftime("%Y-%m-%d %H:%M:%S")
-        return None
+    def to_timestamp(self, ut_str: str, dt_str: str = None) -> int:
+        res_dt = self.to_datetime(ut_str, dt_str)
+        if res_dt:
+            return res_dt.timestamp()
+        else:
+            return None
+
+    def to_dt_str(self, ut_str: str, dt_str: str = None) -> str:
+        res_dt = self.to_datetime(ut_str, dt_str)
+        if res_dt:
+            return t_to_str(res_dt)
+        else:
+            return None
 
 
 class YmdhmsPatternConverter:
@@ -425,6 +452,16 @@ def test_unit_time_disk_converter():
     for ut_str in ut_strs:
         b_dt_str = b_converter.to_dt_str(ut_str)
         a_dt_str = a_converter.to_dt_str(ut_str)
+        res_dict[f"{ut_str} before now"] = b_dt_str
+        res_dict[f"{ut_str} after now"] = a_dt_str
+    logger.mesg(dict_to_str(res_dict), indent=2)
+
+    base_dt_str = "2025-01-01 00:00:00"
+    res_dict = {}
+    logger.mesg(f"* base_dt_str: {base_dt_str}")
+    for ut_str in ut_strs:
+        b_dt_str = b_converter.to_dt_str(ut_str, base_dt_str)
+        a_dt_str = a_converter.to_dt_str(ut_str, base_dt_str)
         res_dict[f"{ut_str} before"] = b_dt_str
         res_dict[f"{ut_str} after"] = a_dt_str
     logger.mesg(dict_to_str(res_dict), indent=2)
