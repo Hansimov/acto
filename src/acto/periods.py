@@ -13,12 +13,10 @@ class Perioder:
         self.verbose = verbose
         self.seeker = PatternedDatetimeSeeker(patterns)
         self.bar = TCLogbar()
-        self.desc = None
 
-    def bind(self, func: callable, desc: str = None):
+    def bind(self, func: callable, desc_func: callable = None):
         self.func = func
-        self.func.perioder = self
-        self.desc = desc
+        self.desc_func = desc_func
 
     def run(self):
         for run_dt_str, remain_seconds in self.seeker:
@@ -32,7 +30,9 @@ class Perioder:
             total = int(remain_seconds)
             run_dt_ts = str_to_ts(run_dt_str)
             self.bar.total = total
-            self.bar.head = self.desc or self.func.__name__
+            if self.desc_func and callable(self.desc_func):
+                self.bar.head = self.desc_func(run_dt_str)
+            self.bar.head = logstr.note(self.bar.head or self.func.__name__)
             for i in range(total, 0, -1):
                 self.bar.update(increment=1)
                 now_ts = get_now_ts()
@@ -56,7 +56,7 @@ def test_perioder():
     # patterns = "****-**-** **:**:**"
     patterns = {"second": "*[369]"}
     perioder = Perioder(patterns)
-    perioder.bind(foo, desc="foo func")
+    perioder.bind(foo, desc_func=lambda x: f"foo at {x}")
     perioder.run()
 
 
