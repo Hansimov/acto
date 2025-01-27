@@ -42,7 +42,7 @@ class Perioder:
             f"wait_for: {remain_seconds_str} ({remain_dt_str})"
         )
         logger.note(msg, verbose=self.verbose)
-        self.file_logger.log(decolored(msg), msg_type="note", add_now=False)
+        self.file_logger.log(decolored(msg), msg_type="init", add_now=False)
 
     def log_wait_progress(self, run_dt_str: str, remain_seconds: float):
         total = int(remain_seconds)
@@ -51,8 +51,9 @@ class Perioder:
         desc_str = ""
         if self.desc_func and callable(self.desc_func):
             desc_str = self.desc_func(run_dt_str)
-        self.desc_str = desc_str or self.func.__name__
+        desc_str = desc_str or self.func.__name__
         self.bar.head = logstr.note(desc_str)
+        self.file_logger.log(decolored(desc_str), add_now=False)
         while remain_seconds > 2 * self.clock_precision:
             now_ts = datetime.now().timestamp()
             self.bar.update(
@@ -69,10 +70,9 @@ class Perioder:
 
     def log_before_func(self):
         single_fill_str = add_fillers("", filler="-")
+        self.file_logger.log("-" * 80, add_now=False)
         self.file_logger.log(f"Start : {get_now_str()}", msg_type="note", add_now=False)
         logger.mesg(single_fill_str, verbose=self.verbose)
-        self.file_logger.log("-" * 80, add_now=False)
-        self.file_logger.log(decolored(self.desc_str), add_now=False)
 
     def log_after_func(self):
         self.file_logger.log("-" * 80, add_now=False)
