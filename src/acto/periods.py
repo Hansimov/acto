@@ -1,5 +1,6 @@
 import time
 
+from datetime import datetime
 from pathlib import Path
 from tclogger import logger, logstr, brk, decolored, FileLogger
 from tclogger import get_now_str, get_now_ts, str_to_ts, dt_to_str
@@ -14,10 +15,12 @@ class Perioder:
         self,
         patterns: Union[str, dict, list],
         log_path: Union[str, Path] = None,
+        clock_precision: float = 0.25,
         verbose: bool = True,
     ):
         self.patterns = patterns
         self.log_path = log_path
+        self.clock_precision = clock_precision
         self.verbose = verbose
         self.seeker = PatternedDatetimeSeeker(patterns)
         self.bar = TCLogbar()
@@ -43,17 +46,20 @@ class Perioder:
             self.bar.total = total
             if self.desc_func and callable(self.desc_func):
                 self.bar.head = self.desc_func(run_dt_str)
-            self.bar.head = logstr.file(self.bar.head or self.func.__name__)
-            for i in range(total, 0, -1):
-                self.bar.update(increment=1)
-                now_ts = get_now_ts()
+            self.bar.head = logstr.note(self.bar.head or self.func.__name__)
+            while remain_seconds > 2 * self.clock_precision:
+                now_ts = datetime.now().timestamp()
+                self.bar.update(
+                    count=round(total - remain_seconds),
+                    remain_seconds=round(remain_seconds),
+                )
                 if now_ts >= run_dt_ts:
                     break
-                else:
-                    remain_seconds = run_dt_ts - now_ts
-                    time.sleep(min(1, remain_seconds))
-            time.sleep(run_dt_ts - get_now_ts())
+                remain_seconds = run_dt_ts - now_ts
+                time.sleep(self.clock_precision)
+            self.bar.update(count=total, remain_seconds=0, flush=True)
             self.bar.reset(linebreak=True)
+            time.sleep(max(run_dt_ts - datetime.now().timestamp(), 0))
             self.file_logger.log(
                 f"Start : {get_now_str()}", msg_type="note", add_now=False
             )
@@ -64,14 +70,14 @@ class Perioder:
 
 
 def foo():
-    cmd = "date"
+    cmd = 'date +"%T.%N"'
     shell_cmd(cmd, showcmd=False)
 
 
 def test_perioder():
     logger.note("> test_perioder")
     # patterns = "****-**-** **:**:**"
-    patterns = {"second": "*[369]"}
+    patterns = {"second": "*[05]"}
     perioder = Perioder(patterns)
     perioder.bind(foo, desc_func=lambda x: f"foo at {x}")
     perioder.run()
