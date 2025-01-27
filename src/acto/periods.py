@@ -2,7 +2,7 @@ import time
 
 from pathlib import Path
 from tclogger import logger, logstr, brk, decolored, FileLogger
-from tclogger import get_now_str, get_now_ts, str_to_ts
+from tclogger import get_now_str, get_now_ts, str_to_ts, dt_to_str
 from tclogger import shell_cmd, Runtimer, TCLogbar
 from typing import Union
 
@@ -30,10 +30,11 @@ class Perioder:
     def run(self):
         for run_dt_str, remain_seconds in self.seeker:
             remain_seconds_str = logstr.file(f"{remain_seconds}s")
+            remain_dt_str = logstr.file(dt_to_str(int(remain_seconds)))
             msg = (
                 f"now: {logstr.file(brk(get_now_str()))}, "
                 f"next_run: {logstr.file(brk(run_dt_str))}, "
-                f"wait_for: {remain_seconds_str}"
+                f"wait_for: {remain_seconds_str} ({remain_dt_str})"
             )
             logger.note(msg, verbose=self.verbose)
             self.file_logger.log(decolored(msg), msg_type="note", add_now=False)
