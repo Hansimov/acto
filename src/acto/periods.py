@@ -52,7 +52,10 @@ class Perioder:
         if self.desc_func and callable(self.desc_func):
             desc_str = self.desc_func(run_dt_str)
         desc_str = desc_str or self.func.__name__
-        self.bar.head = logstr.note(desc_str)
+        if len(desc_str) <= 75:
+            self.bar.head = logstr.note(desc_str)
+        else:
+            logger.note(desc_str)
         self.file_logger.log(decolored(desc_str), add_now=False)
         while remain_seconds > 2 * self.clock_precision:
             now_ts = datetime.now().timestamp()
