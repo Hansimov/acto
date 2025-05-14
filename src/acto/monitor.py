@@ -1,22 +1,23 @@
+import altair as alt
 import json
-from pathlib import Path
-from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
-import altair as alt
-from streamlit_autorefresh import st_autorefresh
 
-# Mapping of actions to colors
+from datetime import timedelta
+from pathlib import Path
+from streamlit_autorefresh import st_autorefresh
+from tclogger import tcdatetime, get_now
+
 ACTION_COLORS = {
     "create": "#333333",  # gray
-    "run": "#ff7722",  # orange
+    "run": "#ff9944",  # orange
     "done": "#44aa44",  # green
     "idle": "#aa4444",  # red
 }
 COLOR_DOMAIN = list(ACTION_COLORS.keys())
 COLOR_RANGE = list(ACTION_COLORS.values())
 
-TRACK_DAYS = 15
+TRACK_DAYS = 7
 REFRESH_INTERVAL = 15
 
 
@@ -26,7 +27,7 @@ class ActionMonitor:
         self.events_by_file = {p.name: [] for p in self.log_paths}
 
     def load_events(self):
-        cutoff = datetime.now() - timedelta(days=TRACK_DAYS)
+        cutoff = get_now() - timedelta(days=TRACK_DAYS)
         for path in self.log_paths:
             evs = []
             if path.exists():
@@ -35,7 +36,7 @@ class ActionMonitor:
                 except json.JSONDecodeError:
                     data = []
                 for msg in data:
-                    ts = datetime.fromisoformat(msg.get("now"))
+                    ts = tcdatetime.fromisoformat(msg.get("now"))
                     if ts < cutoff:
                         continue
                     evs.append((ts, msg.get("action")))
@@ -44,7 +45,6 @@ class ActionMonitor:
 
     def _prepare_segments(self, events):
         segments = []
-        now = datetime.now()
         # segments between consecutive events
         for i in range(len(events) - 1):
             ts, action = events[i]
@@ -84,7 +84,7 @@ class ActionMonitor:
                     {
                         "day": ts.date().strftime("%a %m-%d"),
                         "start": ts,
-                        "end": now,
+                        "end": get_now(),
                         "status": status,
                     }
                 )
@@ -92,15 +92,20 @@ class ActionMonitor:
             return pd.DataFrame(columns=["day", "start", "end", "status"])
         return pd.DataFrame(segments)
 
+    def format_name(self, name: str):
+        name = name.replace("action_", "").replace(".log", "")
+        name = "_".join(seg.capitalize() for seg in name.split("_"))
+        return name
+
     def render(self):
         st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
         self.load_events()
-        st.title("Action Monitor - Continuous View")
+        st.title("Actions Monitor")
         st.write(
-            f"Timeline over the past {TRACK_DAYS} days, auto-refresh every {REFRESH_INTERVAL}s."
+            f"Timeline over past {TRACK_DAYS} days. Auto-refresh every {REFRESH_INTERVAL}s."
         )
         for name, events in self.events_by_file.items():
-            st.subheader(name)
+            st.subheader(self.format_name(name))
             df = self._prepare_segments(events)
             if df.empty:
                 st.info(f"No events in last {TRACK_DAYS} days for {name}.")
@@ -110,7 +115,11 @@ class ActionMonitor:
                 alt.Chart(df)
                 .mark_bar(size=20)
                 .encode(
-                    x=alt.X("start:T", axis=alt.Axis(labelAngle=0, title=None)),
+                    # 24-hour axis labels (hours:minutes)
+                    x=alt.X(
+                        "start:T",
+                        axis=alt.Axis(format="%H:%M", labelAngle=0, title=None),
+                    ),
                     x2="end:T",
                     y=alt.Y("day:N", sort=days, axis=alt.Axis(title=None)),
                     color=alt.Color(
@@ -120,14 +129,18 @@ class ActionMonitor:
                     ),
                     tooltip=[
                         alt.Tooltip("day:N", title="Day"),
-                        alt.Tooltip("start:T", title="Start"),
-                        alt.Tooltip("end:T", title="End"),
+                        alt.Tooltip(
+                            "start:T", title="Start", format="%Y-%m-%d %H:%M:%S"
+                        ),
+                        alt.Tooltip("end:T", title="End", format="%Y-%m-%d %H:%M:%S"),
                         alt.Tooltip("status:N", title="Status"),
                     ],
                 )
-                .properties(height=80 * len(days), width=700)
+                .properties(height=90 * len(days), width=800)
             )
-            st.altair_chart(chart, use_container_width=True)
+            spec = chart.to_dict()
+            spec.setdefault("usermeta", {})["embedOptions"] = {"actions": False}
+            st.vega_lite_chart(df, spec, use_container_width=True)
 
 
 if __name__ == "__main__":
