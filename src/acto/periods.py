@@ -53,6 +53,7 @@ class Perioder:
             self.func_strs, self.desc_str = self.desc_func(self.run_dt_str)
 
     def action_log_before_wait(self):
+        wait_for_str = dt_to_str(int(self.remain_seconds))
         self.create_msg = {
             "name": self.name,
             "now": get_now_str(),
@@ -60,7 +61,7 @@ class Perioder:
             "action": "create",
             "info": {
                 "run_at": self.run_dt_str,
-                "wait_for": self.remain_seconds,
+                "wait_for": wait_for_str,
                 "cmds": self.func_strs,
             },
         }
@@ -118,8 +119,8 @@ class Perioder:
             "type": "period",
             "action": "done",
             "info": {
-                "elapsed": elapsed_str,
                 "run_at": self.run_dt_str,
+                "elapsed": elapsed_str,
             },
         }
         self.action_logger.log(done_msg)
