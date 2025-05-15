@@ -8,14 +8,15 @@ from pathlib import Path
 from streamlit_autorefresh import st_autorefresh
 from tclogger import tcdatetime, get_now
 
-ACTION_COLORS = {
+STATUS_COLORS = {
     "create": "#333333",  # gray
     "run": "#ff9944",  # orange
     "done": "#44aa44",  # green
     "idle": "#aa4444",  # red
+    "skip": "#336677",  # teal
 }
-COLOR_DOMAIN = list(ACTION_COLORS.keys())
-COLOR_RANGE = list(ACTION_COLORS.values())
+COLOR_DOMAIN = list(STATUS_COLORS.keys())
+COLOR_RANGE = list(STATUS_COLORS.values())
 
 TRACK_DAYS = 7
 REFRESH_INTERVAL = 15
@@ -45,7 +46,6 @@ class ActionMonitor:
 
     def _prepare_segments(self, events):
         segments = []
-        # segments between consecutive events
         for i in range(len(events) - 1):
             ts, action = events[i]
             next_ts, next_action = events[i + 1]
@@ -53,10 +53,12 @@ class ActionMonitor:
                 status = "create"
             elif action == "run" and next_action == "done":
                 status = "done"
-            elif action == "run":
-                status = "run"
+            elif action == "run" and next_action != "done":
+                status = "skip"
             elif action == "done" and next_action == "create":
                 status = "create"
+            elif action == "run":
+                status = "run"
             elif action == "done":
                 status = "idle"
             else:
@@ -69,16 +71,16 @@ class ActionMonitor:
                     "status": status,
                 }
             )
-        # handle last event to now
         if events:
             ts, action = events[-1]
-            status = None
             if action == "create":
                 status = "create"
             elif action == "run":
                 status = "run"
             elif action == "done":
                 status = "idle"
+            else:
+                status = None
             if status:
                 segments.append(
                     {
@@ -115,7 +117,6 @@ class ActionMonitor:
                 alt.Chart(df)
                 .mark_bar(size=20)
                 .encode(
-                    # 24-hour axis labels (hours:minutes)
                     x=alt.X(
                         "start:T",
                         axis=alt.Axis(format="%H:%M", labelAngle=0, title=None),
