@@ -37,18 +37,37 @@ class ActionMonitor:
                 except json.JSONDecodeError:
                     data = []
                 for msg in data:
-                    ts = tcdatetime.fromisoformat(msg.get("now"))
-                    if ts < cutoff:
+                    dt = tcdatetime.fromisoformat(msg.get("now"))
+                    if dt < cutoff:
                         continue
-                    evs.append((ts, msg.get("action")))
+                    evs.append((dt, msg.get("action")))
                 evs.sort(key=lambda x: x[0])
             self.events_by_file[path.name] = evs
+
+    def merge_segements(self, segs: list[dict]) -> list[dict]:
+        """
+        - If adjacent segments have the same status, merge them into one segment.
+        - If timestampe of prev_end is same with next_start,
+        then minus 1us of prev_end.
+        """
+        new_segs = []
+        for seg in segs:
+            if new_segs and new_segs[-1]["status"] == seg["status"]:
+                new_segs[-1]["end"] = seg["end"]
+            else:
+                new_segs.append(seg)
+        for i in range(len(new_segs) - 1):
+            prev = new_segs[i]
+            next = new_segs[i + 1]
+            if prev["end"] == next["start"]:
+                prev["end"] = prev["end"] - timedelta(microseconds=1)
+        return new_segs
 
     def _prepare_segments(self, events):
         segments = []
         for i in range(len(events) - 1):
-            ts, action = events[i]
-            next_ts, next_action = events[i + 1]
+            dt, action = events[i]
+            next_dt, next_action = events[i + 1]
             if action == "create" and next_action == "run":
                 status = "create"
             elif action == "run" and next_action == "done":
@@ -65,14 +84,14 @@ class ActionMonitor:
                 continue
             segments.append(
                 {
-                    "day": ts.date().strftime("%a %m-%d"),
-                    "start": ts,
-                    "end": next_ts,
+                    "day": dt.date().strftime("%m-%d"),
+                    "start": dt,
+                    "end": next_dt,
                     "status": status,
                 }
             )
         if events:
-            ts, action = events[-1]
+            dt, action = events[-1]
             if action == "create":
                 status = "create"
             elif action == "run":
@@ -82,17 +101,20 @@ class ActionMonitor:
             else:
                 status = None
             if status:
+                now = get_now().replace(microsecond=0)
                 segments.append(
                     {
-                        "day": ts.date().strftime("%a %m-%d"),
-                        "start": ts,
-                        "end": get_now(),
+                        "day": dt.date().strftime("%m-%d"),
+                        "start": dt,
+                        "end": now,
                         "status": status,
                     }
                 )
+        segments = self.merge_segements(segments)
         if not segments:
             return pd.DataFrame(columns=["day", "start", "end", "status"])
-        return pd.DataFrame(segments)
+        df = pd.DataFrame(segments)
+        return df
 
     def format_name(self, name: str):
         name = name.replace("action_", "").replace(".log", "")
