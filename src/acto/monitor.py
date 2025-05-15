@@ -19,6 +19,7 @@ COLOR_DOMAIN = list(STATUS_COLORS.keys())
 COLOR_RANGE = list(STATUS_COLORS.values())
 
 TRACK_DAYS = 7
+CUTOFF_DAYS = 0.5
 REFRESH_INTERVAL = 15
 
 
@@ -27,8 +28,18 @@ class ActionMonitor:
         self.log_paths = [Path(p) for p in log_paths]
         self.events_by_file = {p.name: [] for p in self.log_paths}
 
+    def get_cutoff_dt(self):
+        return get_now() - timedelta(days=CUTOFF_DAYS)
+
+    def get_track_dt(self):
+        return get_now() - timedelta(days=TRACK_DAYS)
+
+    def get_x_scale_domain(self):
+        cutoff_dt = self.get_cutoff_dt().replace(tzinfo=None)
+        now = get_now().replace(tzinfo=None)
+        return (cutoff_dt, now)
+
     def load_events(self):
-        cutoff = get_now() - timedelta(days=TRACK_DAYS)
         for path in self.log_paths:
             evs = []
             if path.exists():
@@ -38,7 +49,7 @@ class ActionMonitor:
                     data = []
                 for msg in data:
                     dt = tcdatetime.fromisoformat(msg.get("now"))
-                    if dt < cutoff:
+                    if dt < self.get_track_dt():
                         continue
                     evs.append((dt, msg.get("action")))
                 evs.sort(key=lambda x: x[0])
@@ -82,14 +93,7 @@ class ActionMonitor:
                 status = "idle"
             else:
                 continue
-            segments.append(
-                {
-                    "day": dt.date().strftime("%m-%d"),
-                    "start": dt,
-                    "end": next_dt,
-                    "status": status,
-                }
-            )
+            segments.append({"start": dt, "end": next_dt, "status": status})
         if events:
             dt, action = events[-1]
             if action == "create":
@@ -102,17 +106,10 @@ class ActionMonitor:
                 status = None
             if status:
                 now = get_now().replace(microsecond=0)
-                segments.append(
-                    {
-                        "day": dt.date().strftime("%m-%d"),
-                        "start": dt,
-                        "end": now,
-                        "status": status,
-                    }
-                )
+                segments.append({"start": dt, "end": now, "status": status})
         segments = self.merge_segements(segments)
         if not segments:
-            return pd.DataFrame(columns=["day", "start", "end", "status"])
+            return pd.DataFrame(columns=["start", "end", "status"])
         df = pd.DataFrame(segments)
         return df
 
@@ -134,32 +131,32 @@ class ActionMonitor:
             if df.empty:
                 st.info(f"No events in last {TRACK_DAYS} days for {name}.")
                 continue
-            days = sorted(df["day"].unique(), reverse=True)
             chart = (
                 alt.Chart(df)
                 .mark_bar(size=20)
                 .encode(
                     x=alt.X(
                         "start:T",
-                        axis=alt.Axis(format="%H:%M", labelAngle=0, title=None),
+                        scale=alt.Scale(domain=self.get_x_scale_domain()),
+                        axis=alt.Axis(format="%H:%M", labelAngle=0, title="Time"),
                     ),
                     x2="end:T",
-                    y=alt.Y("day:N", sort=days, axis=alt.Axis(title=None)),
+                    y=alt.value(0),
                     color=alt.Color(
                         "status:N",
                         scale=alt.Scale(domain=COLOR_DOMAIN, range=COLOR_RANGE),
                         legend=None,
                     ),
                     tooltip=[
-                        alt.Tooltip("day:N", title="Day"),
                         alt.Tooltip(
-                            "start:T", title="Start", format="%Y-%m-%d %H:%M:%S"
+                            "start:T", title="Start", format="[%m-%d] %H:%M:%S"
                         ),
-                        alt.Tooltip("end:T", title="End", format="%Y-%m-%d %H:%M:%S"),
+                        alt.Tooltip("end:T", title="End", format="[%m-%d] %H:%M:%S"),
                         alt.Tooltip("status:N", title="Status"),
                     ],
                 )
-                .properties(height=90 * len(days), width=800)
+                .properties(height=100, width=800)
+                .interactive()
             )
             spec = chart.to_dict()
             spec.setdefault("usermeta", {})["embedOptions"] = {"actions": False}
