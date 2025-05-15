@@ -15,6 +15,8 @@ STATUS_COLORS = {
     "idle": "#aa4444",  # red
     "skip": "#336677",  # teal
 }
+SEP_LABEL_COLOR = "#00ffff"  # cyan
+SEP_RULE_COLOR = "#22bbbb"  # cyan
 COLOR_DOMAIN = list(STATUS_COLORS.keys())
 COLOR_RANGE = list(STATUS_COLORS.values())
 
@@ -55,9 +57,9 @@ class ActionMonitor:
                 evs.sort(key=lambda x: x[0])
             self.events_by_file[path.name] = evs
 
-    def merge_segements(self, segs: list[dict]) -> list[dict]:
+    def merge_segs(self, segs: list[dict]) -> list[dict]:
         """
-        - If adjacent segments have the same status, merge them into one segment.
+        - If adjacent segs have the same status, merge them into one segment.
         - If timestampe of prev_end is same with next_start,
         then minus 1us of prev_end.
         """
@@ -74,8 +76,8 @@ class ActionMonitor:
                 prev["end"] = prev["end"] - timedelta(microseconds=1)
         return new_segs
 
-    def _prepare_segments(self, events):
-        segments = []
+    def get_segs_df(self, events):
+        segs = []
         for i in range(len(events) - 1):
             dt, action = events[i]
             next_dt, next_action = events[i + 1]
@@ -93,7 +95,7 @@ class ActionMonitor:
                 status = "idle"
             else:
                 continue
-            segments.append({"start": dt, "end": next_dt, "status": status})
+            segs.append({"start": dt, "end": next_dt, "status": status})
         if events:
             dt, action = events[-1]
             if action == "create":
@@ -106,12 +108,24 @@ class ActionMonitor:
                 status = None
             if status:
                 now = get_now().replace(microsecond=0)
-                segments.append({"start": dt, "end": now, "status": status})
-        segments = self.merge_segements(segments)
-        if not segments:
+                segs.append({"start": dt, "end": now, "status": status})
+        segs = self.merge_segs(segs)
+        if not segs:
             return pd.DataFrame(columns=["start", "end", "status"])
-        df = pd.DataFrame(segments)
+        df = pd.DataFrame(segs)
         return df
+
+    def get_seps_df(self, df):
+        """get 00:00 in between the min and max datetime in df"""
+        min_dt = df["start"].min()
+        max_dt = df["end"].max()
+        seps = pd.date_range(
+            start=min_dt.floor("D"),
+            end=max_dt.ceil("D"),
+            freq="D",
+        )
+        seps_df = pd.DataFrame({"sep": seps, "label": seps.strftime("%m-%d")})
+        return seps_df
 
     def format_name(self, name: str):
         name = name.replace("action_", "").replace(".log", "")
@@ -127,11 +141,11 @@ class ActionMonitor:
         )
         for name, events in self.events_by_file.items():
             st.subheader(self.format_name(name))
-            df = self._prepare_segments(events)
+            df = self.get_segs_df(events)
             if df.empty:
                 st.info(f"No events in last {TRACK_DAYS} days for {name}.")
                 continue
-            chart = (
+            bars = (
                 alt.Chart(df)
                 .mark_bar(size=20)
                 .encode(
@@ -141,13 +155,14 @@ class ActionMonitor:
                         axis=alt.Axis(format="%H:%M", labelAngle=0, title="Time"),
                     ),
                     x2="end:T",
-                    y=alt.value(0),
+                    y=alt.value(20),
                     color=alt.Color(
                         "status:N",
                         scale=alt.Scale(domain=COLOR_DOMAIN, range=COLOR_RANGE),
                         legend=None,
                     ),
                     tooltip=[
+                        alt.Tooltip("start:T", title="Date", format="%Y-%m-%d"),
                         alt.Tooltip(
                             "start:T", title="Start", format="[%m-%d] %H:%M:%S"
                         ),
@@ -155,12 +170,37 @@ class ActionMonitor:
                         alt.Tooltip("status:N", title="Status"),
                     ],
                 )
-                .properties(height=100, width=800)
-                .interactive()
             )
+            # seps_df = self.get_seps_df(df)
+            # rules = (
+            #     alt.Chart(seps_df)
+            #     .mark_rule(strokeDash=[4, 2], color=SEP_RULE_COLOR)
+            #     .encode(
+            #         x="sep:T",
+            #         tooltip=alt.Tooltip("label:N", title="Date"),
+            #     )
+            # )
+            # labels = (
+            #     alt.Chart(seps_df)
+            #     .mark_text(
+            #         dy=-4,
+            #         align="center",
+            #         baseline="top",
+            #         fontSize=14,
+            #         color=SEP_LABEL_COLOR,
+            #     )
+            #     .encode(x="sep:T", text="label:N")
+            # )
+            # chart = (
+            #     alt.layer(bars, labels, rules)
+            #     .properties(height=100, width=800)
+            #     .interactive()
+            # )
+            chart = bars.properties(height=100, width=800).interactive()
             spec = chart.to_dict()
             spec.setdefault("usermeta", {})["embedOptions"] = {"actions": False}
             st.vega_lite_chart(df, spec, use_container_width=True)
+            # st.altair_chart(chart, use_container_width=True)
 
 
 if __name__ == "__main__":
