@@ -2,11 +2,12 @@ import altair as alt
 import json
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from datetime import timedelta
 from pathlib import Path
 from streamlit_autorefresh import st_autorefresh
-from tclogger import tcdatetime, get_now
+from tclogger import tcdatetime, get_now, get_now_ts
 
 STATUS_COLORS = {
     "create": "#333333",  # gray
@@ -24,10 +25,51 @@ TRACK_DAYS = 7
 CUTOFF_DAYS = 1
 REFRESH_INTERVAL = 15
 
+STATUS_ICONS = {
+    "create": "🟢",
+    "done": "🟢",
+    "run": "🟠",
+}
+
+PAGE_TITLE = "Actions"
+LOGS_DIR = "/home/asimov/repos/bili-scraper/logs"
+ACTION_LOG_PATTERN = "action_*.log"
+
+
+def init_st_page():
+    st.set_page_config(
+        page_title=PAGE_TITLE,
+        page_icon="📡",
+        layout="wide",
+        initial_sidebar_state="auto",
+    )
+
+
+def init_st_bars():
+    st.sidebar.title("Settings")
+    log_dir = Path(st.sidebar.text_input("Logs Directory", LOGS_DIR))
+    log_files = []
+    if log_dir.exists() and log_dir.is_dir():
+        log_files = sorted([str(p) for p in log_dir.glob(ACTION_LOG_PATTERN)])
+    selected = st.sidebar.multiselect("Select log files", log_files, default=log_files)
+    return selected
+
+
+def inject_title(new_title: str):
+    new_title_str = json.dumps(new_title)
+    # ts_str is used to trigger page-reload in streamlit
+    ts_str = f"<!-- {get_now_ts()} -->"
+    set_title_js = (
+        f"<script>window.parent.document.title = {new_title_str};\n{ts_str};</script>"
+    )
+    components.html(set_title_js, height=0)
+    log_title_js = f"<script>console.log({new_title_str});\n{ts_str};</script>"
+    components.html(log_title_js, height=0)
+
 
 class ActionMonitor:
     def __init__(self, log_paths):
-        self.log_paths = [Path(p) for p in log_paths]
+        self.log_paths = sorted([Path(p) for p in log_paths], reverse=False)
         self.events_by_file = {p.name: [] for p in self.log_paths}
 
     def get_cutoff_dt(self):
@@ -139,12 +181,19 @@ class ActionMonitor:
         st.write(
             f"Timeline over past {TRACK_DAYS} days. Auto-refresh every {REFRESH_INTERVAL}s."
         )
+        status_icons: list[str] = []
         for name, events in self.events_by_file.items():
-            st.subheader(self.format_name(name))
+            header_str = self.format_name(name)
             df = self.get_segs_df(events)
             if df.empty:
+                st.subheader(header_str)
                 st.info(f"No events in last {TRACK_DAYS} days for {name}.")
                 continue
+            else:
+                last_status = df["status"].iloc[-1]
+                status_icon = STATUS_ICONS.get(last_status, "❓")
+                status_icons.append(status_icon)
+                st.subheader(f"{status_icon} {header_str}")
             bars = (
                 alt.Chart(df)
                 .mark_bar(size=20)
@@ -175,18 +224,14 @@ class ActionMonitor:
             spec = chart.to_dict()
             spec.setdefault("usermeta", {})["embedOptions"] = {"actions": False}
             st.vega_lite_chart(df, spec, use_container_width=True)
-            # st.altair_chart(chart, use_container_width=True)
+        status_icons_str = "".join(status_icons)
+        new_title = f"{status_icons_str} {PAGE_TITLE}"
+        inject_title(new_title)
 
 
 if __name__ == "__main__":
-    st.sidebar.title("Settings")
-    log_dir = Path(
-        st.sidebar.text_input("Logs Directory", "/home/asimov/repos/bili-scraper/logs")
-    )
-    log_files = []
-    if log_dir.exists() and log_dir.is_dir():
-        log_files = sorted([str(p) for p in log_dir.glob("action_*.log")])
-    selected = st.sidebar.multiselect("Select log files", log_files, default=log_files)
+    init_st_page()
+    selected = init_st_bars()
     monitor = ActionMonitor(selected)
     monitor.render()
 
