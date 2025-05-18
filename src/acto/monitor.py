@@ -21,7 +21,7 @@ COLOR_DOMAIN = list(STATUS_COLORS.keys())
 COLOR_RANGE = list(STATUS_COLORS.values())
 
 TRACK_DAYS = 7
-CUTOFF_DAYS = 0.5
+CUTOFF_DAYS = 1
 REFRESH_INTERVAL = 15
 
 
@@ -171,31 +171,6 @@ class ActionMonitor:
                     ],
                 )
             )
-            # seps_df = self.get_seps_df(df)
-            # rules = (
-            #     alt.Chart(seps_df)
-            #     .mark_rule(strokeDash=[4, 2], color=SEP_RULE_COLOR)
-            #     .encode(
-            #         x="sep:T",
-            #         tooltip=alt.Tooltip("label:N", title="Date"),
-            #     )
-            # )
-            # labels = (
-            #     alt.Chart(seps_df)
-            #     .mark_text(
-            #         dy=-4,
-            #         align="center",
-            #         baseline="top",
-            #         fontSize=14,
-            #         color=SEP_LABEL_COLOR,
-            #     )
-            #     .encode(x="sep:T", text="label:N")
-            # )
-            # chart = (
-            #     alt.layer(bars, labels, rules)
-            #     .properties(height=100, width=800)
-            #     .interactive()
-            # )
             chart = bars.properties(height=100, width=800).interactive()
             spec = chart.to_dict()
             spec.setdefault("usermeta", {})["embedOptions"] = {"actions": False}
