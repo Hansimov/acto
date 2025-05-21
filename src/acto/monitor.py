@@ -13,8 +13,8 @@ STATUS_COLORS = {
     "create": "#333333",  # gray
     "run": "#ff9944",  # orange
     "done": "#44aa44",  # green
-    "idle": "#aa4444",  # red
-    "skip": "#336677",  # teal
+    "idle": "#336677",  # teal
+    "loop": "#aa4444",  # red
 }
 SEP_LABEL_COLOR = "#00ffff"  # cyan
 SEP_RULE_COLOR = "#22bbbb"  # cyan
@@ -28,6 +28,7 @@ REFRESH_INTERVAL = 15
 STATUS_ICONS = {
     "create": "🟢",
     "done": "🟢",
+    "idle": "🟢",
     "run": "🟠",
 }
 
@@ -43,6 +44,30 @@ def init_st_page():
         layout="wide",
         initial_sidebar_state="auto",
     )
+    st.markdown(
+        """
+        <style>
+            .stAppHeader {
+            }
+            .stMainBlockContainer{
+                padding-top: 0px;
+                padding-bottom: 0px;
+            }
+            h3 {
+                font-size: 1.5rem !important;
+                padding-top: 0.25rem !important;
+                padding-bottom: 0.25rem !important;
+            }
+            div[data-testid="stElementContainer"]:has(> iframe[height="0"][data-testid="stIFrame"]) {
+                display: none !important;
+            }
+            span[data-baseweb="tag"] {
+                background-color: #393939 !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def init_st_bars():
@@ -51,7 +76,12 @@ def init_st_bars():
     log_files = []
     if log_dir.exists() and log_dir.is_dir():
         log_files = sorted([str(p) for p in log_dir.glob(ACTION_LOG_PATTERN)])
-    selected = st.sidebar.multiselect("Select log files", log_files, default=log_files)
+    selected = st.sidebar.multiselect(
+        "Select log files",
+        options=log_files,
+        default=log_files,
+        format_func=lambda x: Path(x).name,
+    )
     return selected
 
 
@@ -128,7 +158,7 @@ class ActionMonitor:
             elif action == "run" and next_action == "done":
                 status = "done"
             elif action == "run" and next_action != "done":
-                status = "skip"
+                status = "loop"
             elif action == "done" and next_action == "create":
                 status = "create"
             elif action == "run":
@@ -177,10 +207,10 @@ class ActionMonitor:
     def render(self):
         st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
         self.load_events()
-        st.title("Actions Monitor")
-        st.write(
-            f"Timeline over past {TRACK_DAYS} days. Auto-refresh every {REFRESH_INTERVAL}s."
-        )
+        # st.title("Actions Monitor")
+        # st.write(
+        #     f"Timeline over past {TRACK_DAYS} days. Auto-refresh every {REFRESH_INTERVAL}s."
+        # )
         status_icons: list[str] = []
         for name, events in self.events_by_file.items():
             header_str = self.format_name(name)
@@ -201,7 +231,7 @@ class ActionMonitor:
                     x=alt.X(
                         "start:T",
                         scale=alt.Scale(domain=self.get_x_scale_domain()),
-                        axis=alt.Axis(format="%H:%M", labelAngle=0, title="Time"),
+                        axis=alt.Axis(format="%H:%M", labelAngle=0, title=None),
                     ),
                     x2="end:T",
                     y=alt.value(20),
@@ -220,7 +250,7 @@ class ActionMonitor:
                     ],
                 )
             )
-            chart = bars.properties(height=100, width=800).interactive()
+            chart = bars.properties(height=80, width=800).interactive()
             spec = chart.to_dict()
             spec.setdefault("usermeta", {})["embedOptions"] = {"actions": False}
             st.vega_lite_chart(df, spec, use_container_width=True)
