@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from tclogger import logger, logstr, brk
 from tclogger import get_now_str, get_now_ts, str_to_ts, dt_to_str
-from tclogger import TCLogbar, add_fillers
+from tclogger import TCLogbar, add_fills
 from typing import Union
 
 from .times import PatternedDatetimeSeeker
@@ -37,9 +37,9 @@ class Perioder:
     def log_before_wait(self):
         remain_seconds_str = logstr.file(f"{self.remain_seconds}s")
         remain_dt_str = logstr.file(dt_to_str(int(self.remain_seconds)))
-        double_fill_str = add_fillers("", filler="=")
+        fill_str = add_fills("", filler="= ")
         create_cli_msg = (
-            f"{double_fill_str}\n"
+            f"{fill_str}\n"
             f"now: {logstr.file(brk(get_now_str()))}, "
             f"next_run: {logstr.file(brk(self.run_dt_str))}, "
             f"wait_for: {remain_seconds_str} ({remain_dt_str})"
@@ -91,7 +91,7 @@ class Perioder:
         time.sleep(max(run_dt_ts - datetime.now().timestamp(), 0))
 
     def log_before_func(self):
-        single_fill_str = add_fillers("", filler="-")
+        single_fill_str = add_fills("", filler="- ")
         logger.mesg(single_fill_str, verbose=self.verbose)
 
     def action_log_before_func(self):
