@@ -15,5 +15,5 @@ Run example:
 
 ```sh
 python -m acto.times
-python -m acto.periods
+python -m acto.tests
 ```
