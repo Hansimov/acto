@@ -1,5 +1,5 @@
 from time import sleep
-from tclogger import logger, logstr
+from tclogger import logger, logstr, brk, get_now_str
 
 
 class Retrier:
@@ -16,7 +16,10 @@ class Retrier:
         retry_count_str = (
             f"[{logstr.file(self.retry_count)}/{logstr.mesg(self.max_retries)}]"
         )
-        logger.mesg(f"{retry_count_str} Retry after {self.retry_interval} seconds ...")
+        now_str = logstr.file(brk(get_now_str()))
+        logger.mesg(
+            f"{retry_count_str} Retry after {self.retry_interval} seconds ... {now_str}"
+        )
 
     def log_retry_exceed(self):
         logger.warn(f"× Exceed max retries ({self.max_retries}). Exited!")
