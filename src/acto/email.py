@@ -4,7 +4,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
-from tclogger import logger, logstr, dict_to_str, get_now_str, brk
+from tclogger import logger, logstr, dict_to_str, get_now_str, brk, confirm_input
 from typing import TypedDict, Optional, Union, Literal
 from pathlib import Path
 
@@ -30,6 +30,7 @@ class Emailer:
         self,
         configs: EmailConfigsType,
         connect_at_init: bool = True,
+        confirm_before_send: bool = True,
         verbose: bool = True,
     ):
         self.configs = configs
@@ -38,6 +39,7 @@ class Emailer:
         self.username = configs["username"]
         self.password = configs["password"]
         self.connect_at_init = connect_at_init
+        self.confirm_before_send = confirm_before_send
         self.verbose = verbose
         logger.enter_quiet(not self.verbose)
         self.smtp: Optional[smtplib.SMTP] = None
@@ -131,8 +133,13 @@ class Emailer:
         logger.note(f"> Sending email:")
         logger.mesg(dict_to_str(content), indent=2)
         msg = self.content_to_mime_msg(content)
+        if self.confirm_before_send:
+            confirm_input("send", op_name="email send", max_retries=3)
         res = self.smtp.sendmail(self.username, content["to"], msg)
-        logger.okay(dict_to_str(res), indent=2)
+        if res:
+            logger.mesg(dict_to_str(res), indent=2)
+        else:
+            logger.okay(f"+ Successfully sent to: {logstr.file(content['to'])}")
         return res
 
     def __del__(self):
