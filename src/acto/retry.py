@@ -71,10 +71,15 @@ class SoftRetrier:
     def __exit__(self, exc_type, exc_val, exc_tb):
         return False
 
-    def run(self, func, *args, **kwargs):
+    def run(self, func, *args, **kwargs) -> bool:
         while self.is_retry_not_exceeded():
             self.retry_count += 1
             res_bool = func(*args, **kwargs)
             if res_bool is False:
                 if self.is_retry_not_exceeded():
                     self.sleep_interval()
+                    continue
+                else:
+                    return False
+            else:
+                return True
