@@ -1,7 +1,7 @@
 from tclogger import shell_cmd, logger, get_now_str
 
 from acto.periods import Perioder
-from acto.retry import Retrier
+from acto.retry import Retrier, SoftRetrier
 
 
 def foo():
@@ -45,8 +45,31 @@ def test_retrier():
     logger.mesg("* test_retrier completed")
 
 
+bar_call_count = 0
+
+
+def bar_to_soft_retry(ok_until: int = 3):
+    global bar_call_count
+    bar_call_count += 1
+    if bar_call_count < ok_until:
+        return False
+    else:
+        cmd = 'date +"%T.%N"'
+        shell_cmd(cmd, showcmd=False)
+        print(f"Good at call: {bar_call_count}")
+        return True
+
+
+def test_soft_retrier():
+    logger.note("> test_soft_retrier")
+    with SoftRetrier(max_retries=3, retry_interval=0.5) as retrier:
+        retrier.run(bar_to_soft_retry, ok_until=4)
+    logger.mesg("* test_soft_retrier completed")
+
+
 if __name__ == "__main__":
     # test_perioder()
-    test_retrier()
+    # test_retrier()
+    test_soft_retrier()
 
     # python -m acto.tests

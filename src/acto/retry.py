@@ -49,3 +49,32 @@ class Retrier:
                 else:
                     self.log_retry_exceed()
                     raise e
+
+
+class SoftRetrier:
+    """For funcs do not raise exception, but return False when failed."""
+
+    def __init__(self, max_retries: int = 3, retry_interval: float = 2):
+        self.max_retries = max_retries
+        self.retry_interval = retry_interval
+        self.retry_count = 0
+
+    def is_retry_not_exceeded(self):
+        return self.retry_count <= self.max_retries
+
+    def sleep_interval(self):
+        sleep(self.retry_interval)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return False
+
+    def run(self, func, *args, **kwargs):
+        while self.is_retry_not_exceeded():
+            self.retry_count += 1
+            res_bool = func(*args, **kwargs)
+            if res_bool is False:
+                if self.is_retry_not_exceeded():
+                    self.sleep_interval()
