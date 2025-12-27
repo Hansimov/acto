@@ -1,5 +1,6 @@
 from time import sleep
 from tclogger import logger, logstr, brk, get_now_str
+from typing import Union, Any
 
 
 class Retrier:
@@ -71,15 +72,15 @@ class SoftRetrier:
     def __exit__(self, exc_type, exc_val, exc_tb):
         return False
 
-    def run(self, func, *args, **kwargs) -> bool:
+    def run(self, func, *args, **kwargs) -> Union[False, Any]:
         while self.is_retry_not_exceeded():
             self.retry_count += 1
-            res_bool = func(*args, **kwargs)
-            if res_bool is False:
+            res = func(*args, **kwargs)
+            if res is False:
                 if self.is_retry_not_exceeded():
                     self.sleep_interval()
                     continue
                 else:
                     return False
             else:
-                return True
+                return res

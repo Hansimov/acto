@@ -57,14 +57,14 @@ def bar_to_soft_retry(ok_until: int = 3):
         cmd = 'date +"%T.%N"'
         shell_cmd(cmd, showcmd=False)
         print(f"Good at call: {bar_call_count}")
-        return True
+        return bar_call_count
 
 
 def test_soft_retrier():
     logger.note("> test_soft_retrier")
     with SoftRetrier(max_retries=3, retry_interval=0.5) as retrier:
-        retrier.run(bar_to_soft_retry, ok_until=4)
-    logger.mesg("* test_soft_retrier completed")
+        res = retrier.run(bar_to_soft_retry, ok_until=4)
+    logger.mesg(f"* test_soft_retrier completed: {res}")
 
 
 if __name__ == "__main__":
