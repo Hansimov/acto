@@ -58,10 +58,6 @@ class SoftRetrier:
     def __init__(self, max_retries: int = 3, retry_interval: float = 2):
         self.max_retries = max_retries
         self.retry_interval = retry_interval
-        self.retry_count = 0
-
-    def is_retry_not_exceeded(self):
-        return self.retry_count <= self.max_retries
 
     def sleep_interval(self):
         sleep(self.retry_interval)
@@ -73,11 +69,12 @@ class SoftRetrier:
         return False
 
     def run(self, func, *args, **kwargs) -> Union[False, Any]:
-        while self.is_retry_not_exceeded():
-            self.retry_count += 1
+        retry_count = 0
+        while retry_count <= self.max_retries:
+            retry_count += 1
             res = func(*args, **kwargs)
             if res is False:
-                if self.is_retry_not_exceeded():
+                if retry_count <= self.max_retries:
                     self.sleep_interval()
                     continue
                 else:
