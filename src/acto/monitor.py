@@ -14,7 +14,7 @@ STATUS_COLORS = {
     "run": "#ff9944",  # orange
     "done": "#44aa44",  # green
     "idle": "#336677",  # teal
-    "loop": "#aa4444",  # red
+    "error": "#aa4444",  # red
 }
 SEP_LABEL_COLOR = "#00ffff"  # cyan
 SEP_RULE_COLOR = "#22bbbb"  # cyan
@@ -36,7 +36,7 @@ STATUS_TOOLTIP = {
     "run": "🟠",
     "done": "🟢",
     "idle": "⚫",
-    "loop": "🔴",
+    "error": "🔴",
 }
 
 PAGE_TITLE = "Actions"
@@ -202,17 +202,19 @@ class ActionMonitor:
         for i in range(len(events) - 1):
             dt, action = events[i]
             next_dt, next_action = events[i + 1]
-            if action == "create" and next_action == "run":
-                status = "create"
-            elif action == "run" and next_action == "done":
-                status = "done"
-            elif action == "run" and next_action != "done":
-                status = "loop"
-            elif action == "done" and next_action == "create":
+            # Determine status based on current and next action
+            if action == "create":
+                # create -> any: waiting to run (create status)
                 status = "create"
             elif action == "run":
-                status = "run"
+                if next_action == "done":
+                    # run -> done: completed successfully
+                    status = "done"
+                else:
+                    # run -> run/create: error (abnormal)
+                    status = "error"
             elif action == "done":
+                # done -> any: idle period
                 status = "idle"
             else:
                 continue
@@ -236,8 +238,12 @@ class ActionMonitor:
                 segs.append({"start": dt, "end": now, "status": status})
         segs = self.merge_segs(segs)
         if not segs:
-            return pd.DataFrame(columns=["start", "end", "status", "duration"])
+            return pd.DataFrame(
+                columns=["start", "end", "status", "duration", "status_display"]
+            )
         df = pd.DataFrame(segs)
+        df["start"] = pd.to_datetime(df["start"]).dt.tz_localize(None)
+        df["end"] = pd.to_datetime(df["end"]).dt.tz_localize(None)
         df["duration"] = (df["end"] - df["start"]).apply(
             lambda x: dt_to_str(x, str_format="unit")
         )
