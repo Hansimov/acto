@@ -103,17 +103,27 @@ class ActionMonitor:
         self.events_by_file = {p.name: [] for p in self.log_paths}
 
     def get_cutoff_dt(self):
-        return get_now() - timedelta(days=CUTOFF_DAYS)
+        dt = get_now() - timedelta(days=CUTOFF_DAYS)
+        if dt.tzinfo is not None:
+            dt = dt.replace(tzinfo=None)
+        return dt
 
     def get_track_dt(self):
-        return get_now() - timedelta(days=TRACK_DAYS)
+        dt = get_now() - timedelta(days=TRACK_DAYS)
+        if dt.tzinfo is not None:
+            dt = dt.replace(tzinfo=None)
+        return dt
 
     def get_x_scale_domain(self):
-        cutoff_dt = self.get_cutoff_dt().replace(tzinfo=None)
-        now = get_now().replace(tzinfo=None)
+        """Get x-axis scale domain based on CUTOFF_DAYS."""
+        now = get_now()
+        if now.tzinfo is not None:
+            now = now.replace(tzinfo=None)
+        cutoff_dt = self.get_cutoff_dt()
         return (cutoff_dt, now)
 
     def load_events(self):
+        track_dt = self.get_track_dt()
         for path in self.log_paths:
             evs = []
             if path.exists():
@@ -123,7 +133,10 @@ class ActionMonitor:
                     data = []
                 for msg in data:
                     dt = tcdatetime.fromisoformat(msg.get("now"))
-                    if dt < self.get_track_dt():
+                    # Ensure timezone-naive for consistency
+                    if dt.tzinfo is not None:
+                        dt = dt.replace(tzinfo=None)
+                    if dt < track_dt:
                         continue
                     evs.append((dt, msg.get("action")))
                 evs.sort(key=lambda x: x[0])
@@ -132,21 +145,30 @@ class ActionMonitor:
     def merge_segs(self, segs: list[dict]) -> list[dict]:
         """
         - If adjacent segs have the same status, merge them into one segment.
-        - If timestampe of prev_end is same with next_start,
-        then minus 1us of prev_end.
+        - If timestamp of prev_end is same or after next_start,
+        then adjust prev_end to be 1us before next_start.
+        - Filter out invalid segments where start >= end.
         """
+        if not segs:
+            return []
+
         new_segs = []
         for seg in segs:
             if new_segs and new_segs[-1]["status"] == seg["status"]:
                 new_segs[-1]["end"] = seg["end"]
             else:
-                new_segs.append(seg)
+                new_segs.append(seg.copy())  # Use copy to avoid modifying original
+
+        # Adjust overlapping timestamps
         for i in range(len(new_segs) - 1):
             prev = new_segs[i]
             next = new_segs[i + 1]
-            if prev["end"] == next["start"]:
-                prev["end"] = prev["end"] - timedelta(microseconds=1)
-        return new_segs
+            if prev["end"] >= next["start"]:
+                prev["end"] = next["start"] - timedelta(microseconds=1)
+
+        # Filter out invalid segments
+        valid_segs = [seg for seg in new_segs if seg["start"] < seg["end"]]
+        return valid_segs
 
     def get_segs_df(self, events):
         segs = []
@@ -179,7 +201,11 @@ class ActionMonitor:
             else:
                 status = None
             if status:
-                now = get_now().replace(microsecond=0)
+                now = get_now()
+                # Ensure timezone-naive to match dt
+                if now.tzinfo is not None:
+                    now = now.replace(tzinfo=None)
+                now = now.replace(microsecond=0)
                 segs.append({"start": dt, "end": now, "status": status})
         segs = self.merge_segs(segs)
         if not segs:
