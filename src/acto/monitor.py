@@ -7,7 +7,7 @@ import streamlit.components.v1 as components
 from datetime import timedelta
 from pathlib import Path
 from streamlit_autorefresh import st_autorefresh
-from tclogger import tcdatetime, get_now, get_now_ts
+from tclogger import tcdatetime, get_now, get_now_ts, dt_to_str
 
 STATUS_COLORS = {
     "create": "#333333",  # gray
@@ -31,10 +31,37 @@ STATUS_ICONS = {
     "idle": "🟢",
     "run": "🟠",
 }
+STATUS_TOOLTIP = {
+    "create": "⚫",
+    "run": "🟠",
+    "done": "🟢",
+    "idle": "⚫",
+    "loop": "🔴",
+}
 
 PAGE_TITLE = "Actions"
 LOGS_DIR = "/home/asimov/repos/bili-scraper/logs"
 ACTION_LOG_PATTERN = "action_*.log"
+
+# Language settings
+LANG = "zh"  # "zh" for Chinese, "en" for English
+LANG_TOOLTIP_LABELS = {
+    "zh": {
+        "date": "日期",
+        "start": "开始",
+        "end": "结束",
+        "duration": "时长",
+        "status": "状态",
+    },
+    "en": {
+        "date": "Date",
+        "start": "Start",
+        "end": "End",
+        "duration": "Duration",
+        "status": "Status",
+    },
+}
+TOOLTIP_LABELS = LANG_TOOLTIP_LABELS[LANG]
 
 
 def init_st_page():
@@ -209,8 +236,14 @@ class ActionMonitor:
                 segs.append({"start": dt, "end": now, "status": status})
         segs = self.merge_segs(segs)
         if not segs:
-            return pd.DataFrame(columns=["start", "end", "status"])
+            return pd.DataFrame(columns=["start", "end", "status", "duration"])
         df = pd.DataFrame(segs)
+        df["duration"] = (df["end"] - df["start"]).apply(
+            lambda x: dt_to_str(x, str_format="unit")
+        )
+        df["status_display"] = df["status"].apply(
+            lambda x: f"{STATUS_TOOLTIP.get(x, '❓')} {x}"
+        )
         return df
 
     def get_seps_df(self, df):
@@ -267,12 +300,23 @@ class ActionMonitor:
                         legend=None,
                     ),
                     tooltip=[
-                        alt.Tooltip("start:T", title="Date", format="%Y-%m-%d"),
                         alt.Tooltip(
-                            "start:T", title="Start", format="[%m-%d] %H:%M:%S"
+                            "start:T",
+                            title=TOOLTIP_LABELS["date"],
+                            format="%Y-%m-%d",
                         ),
-                        alt.Tooltip("end:T", title="End", format="[%m-%d] %H:%M:%S"),
-                        alt.Tooltip("status:N", title="Status"),
+                        alt.Tooltip(
+                            "start:T",
+                            title=TOOLTIP_LABELS["start"],
+                            format="[%m/%d] %H:%M:%S",
+                        ),
+                        alt.Tooltip(
+                            "end:T",
+                            title=TOOLTIP_LABELS["end"],
+                            format="[%m/%d] %H:%M:%S",
+                        ),
+                        alt.Tooltip("duration:N", title=TOOLTIP_LABELS["duration"]),
+                        alt.Tooltip("status_display:N", title=TOOLTIP_LABELS["status"]),
                     ],
                 )
             )
