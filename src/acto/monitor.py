@@ -155,17 +155,41 @@ class ActionMonitor:
             evs = []
             if path.exists():
                 try:
-                    data = json.loads(path.read_text())
-                except json.JSONDecodeError:
-                    data = []
-                for msg in data:
-                    dt = tcdatetime.fromisoformat(msg.get("now"))
-                    # Ensure timezone-naive for consistency
-                    if dt.tzinfo is not None:
-                        dt = dt.replace(tzinfo=None)
-                    if dt < track_dt:
+                    # Read file content with retry for race condition
+                    content = path.read_text(encoding="utf-8")
+                    if not content.strip():
+                        # Empty file
+                        self.events_by_file[path.name] = []
                         continue
-                    evs.append((dt, msg.get("action")))
+                    data = json.loads(content)
+                except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:
+                    # File being written or corrupted, keep previous data if exists
+                    if path.name not in self.events_by_file:
+                        self.events_by_file[path.name] = []
+                    continue
+
+                if not isinstance(data, list):
+                    self.events_by_file[path.name] = []
+                    continue
+
+                for msg in data:
+                    if (
+                        not isinstance(msg, dict)
+                        or "now" not in msg
+                        or "action" not in msg
+                    ):
+                        continue
+                    try:
+                        dt = tcdatetime.fromisoformat(msg.get("now"))
+                        # Ensure timezone-naive for consistency
+                        if dt.tzinfo is not None:
+                            dt = dt.replace(tzinfo=None)
+                        if dt < track_dt:
+                            continue
+                        evs.append((dt, msg.get("action")))
+                    except (ValueError, TypeError):
+                        # Invalid datetime format, skip
+                        continue
                 evs.sort(key=lambda x: x[0])
             self.events_by_file[path.name] = evs
 
@@ -269,67 +293,90 @@ class ActionMonitor:
         name = "_".join(seg.capitalize() for seg in name.split("_"))
         return name
 
-    def render(self):
-        st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
-        self.load_events()
-        # st.title("Actions Monitor")
-        # st.write(
-        #     f"Timeline over past {TRACK_DAYS} days. Auto-refresh every {REFRESH_INTERVAL}s."
-        # )
-        status_icons: list[str] = []
-        for name, events in self.events_by_file.items():
-            header_str = self.format_name(name)
+    def validate_df(self, df: pd.DataFrame, name: str) -> bool:
+        """Validate DataFrame has required structure and data."""
+        if df.empty:
+            return False
+        required_cols = ["start", "end", "status"]
+        if not all(col in df.columns for col in required_cols):
+            st.subheader(f"❌ {self.format_name(name)}")
+            st.error(f"Invalid data structure for {name}")
+            return False
+        if len(df) == 0:
+            return False
+        return True
+
+    def create_chart(self, df: pd.DataFrame) -> alt.Chart:
+        """Create Altair chart from DataFrame."""
+        bars = (
+            alt.Chart(df)
+            .mark_bar(size=20)
+            .encode(
+                x=alt.X(
+                    "start:T",
+                    scale=alt.Scale(domain=self.get_x_scale_domain()),
+                    axis=alt.Axis(format="%H:%M", labelAngle=0, title=None),
+                ),
+                x2="end:T",
+                y=alt.value(20),
+                color=alt.Color(
+                    "status:N",
+                    scale=alt.Scale(domain=COLOR_DOMAIN, range=COLOR_RANGE),
+                    legend=None,
+                ),
+                tooltip=[
+                    alt.Tooltip(
+                        "start:T", title=TOOLTIP_LABELS["date"], format="%Y-%m-%d"
+                    ),
+                    alt.Tooltip(
+                        "start:T",
+                        title=TOOLTIP_LABELS["start"],
+                        format="[%m/%d] %H:%M:%S",
+                    ),
+                    alt.Tooltip(
+                        "end:T", title=TOOLTIP_LABELS["end"], format="[%m/%d] %H:%M:%S"
+                    ),
+                    alt.Tooltip("duration:N", title=TOOLTIP_LABELS["duration"]),
+                    alt.Tooltip("status_display:N", title=TOOLTIP_LABELS["status"]),
+                ],
+            )
+        )
+        return bars.properties(height=80, width=800).interactive()
+
+    def render_task(self, name: str, events: list) -> str:
+        """Render a single task. Returns status icon or empty string."""
+        header_str = self.format_name(name)
+        try:
             df = self.get_segs_df(events)
-            if df.empty:
+            if not self.validate_df(df, name):
                 st.subheader(header_str)
                 st.info(f"No events in last {TRACK_DAYS} days for {name}.")
-                continue
-            else:
-                last_status = df["status"].iloc[-1]
-                status_icon = STATUS_ICONS.get(last_status, "❓")
-                status_icons.append(status_icon)
-                st.subheader(f"{status_icon} {header_str}")
-            bars = (
-                alt.Chart(df)
-                .mark_bar(size=20)
-                .encode(
-                    x=alt.X(
-                        "start:T",
-                        scale=alt.Scale(domain=self.get_x_scale_domain()),
-                        axis=alt.Axis(format="%H:%M", labelAngle=0, title=None),
-                    ),
-                    x2="end:T",
-                    y=alt.value(20),
-                    color=alt.Color(
-                        "status:N",
-                        scale=alt.Scale(domain=COLOR_DOMAIN, range=COLOR_RANGE),
-                        legend=None,
-                    ),
-                    tooltip=[
-                        alt.Tooltip(
-                            "start:T",
-                            title=TOOLTIP_LABELS["date"],
-                            format="%Y-%m-%d",
-                        ),
-                        alt.Tooltip(
-                            "start:T",
-                            title=TOOLTIP_LABELS["start"],
-                            format="[%m/%d] %H:%M:%S",
-                        ),
-                        alt.Tooltip(
-                            "end:T",
-                            title=TOOLTIP_LABELS["end"],
-                            format="[%m/%d] %H:%M:%S",
-                        ),
-                        alt.Tooltip("duration:N", title=TOOLTIP_LABELS["duration"]),
-                        alt.Tooltip("status_display:N", title=TOOLTIP_LABELS["status"]),
-                    ],
-                )
-            )
-            chart = bars.properties(height=80, width=800).interactive()
+                return ""
+
+            last_status = df["status"].iloc[-1]
+            status_icon = STATUS_ICONS.get(last_status, "❓")
+            st.subheader(f"{status_icon} {header_str}")
+
+            chart = self.create_chart(df)
             spec = chart.to_dict()
             spec.setdefault("usermeta", {})["embedOptions"] = {"actions": False}
             st.vega_lite_chart(df, spec, use_container_width=True)
+
+            return status_icon
+        except Exception as e:
+            st.subheader(f"❌ {header_str}")
+            st.error(f"Rendering error for {name}: {str(e)}")
+            return ""
+
+    def render(self):
+        st_autorefresh(interval=REFRESH_INTERVAL * 1000, key="refresh")
+        self.load_events()
+        status_icons: list[str] = []
+        for name, events in self.events_by_file.items():
+            icon = self.render_task(name, events)
+            if icon:
+                status_icons.append(icon)
+                continue
         status_icons_str = "".join(status_icons)
         new_title = f"{status_icons_str} {PAGE_TITLE}"
         inject_title(new_title)
